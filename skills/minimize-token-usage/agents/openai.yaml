@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minimize Token Usage"
+  short_description: "Cut tool-output tokens without losing evidence"
+  default_prompt: "Use $minimize-token-usage to finish this task with minimal token usage."

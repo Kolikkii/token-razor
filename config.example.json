@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "mode": "balanced",
+  "smallResponseChars": 4000,
+  "budgets": {
+    "safe": 8500,
+    "balanced": 6000,
+    "extreme": 3200
+  },
+  "archive": {
+    "enabled": true,
+    "ttlHours": 24,
+    "maxMiB": 64
+  },
+  "largeCatBytes": 80000,
+  "largeCatLines": 240,
+  "metrics": true,
+  "metricsRetentionDays": 30
+}
