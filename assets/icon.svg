@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Token Razor">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A78BFA"/><stop offset="1" stop-color="#6D28D9"/></linearGradient></defs>
+  <rect width="64" height="64" rx="16" fill="#17111F"/>
+  <path d="M13 42 43 12l8 8-30 30H13v-8Z" fill="url(#g)"/>
+  <path d="m35 20 9 9M18 43h10" stroke="#F5F3FF" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,32 @@
+{
+  "name": "token-razor",
+  "version": "0.3.0",
+  "description": "Local tool-output compression for lower-token Codex sessions.",
+  "author": {
+    "name": "Komaru",
+    "url": "https://github.com/Kolikkii"
+  },
+  "homepage": "https://github.com/Kolikkii/token-razor#readme",
+  "repository": "https://github.com/Kolikkii/token-razor",
+  "license": "MIT",
+  "keywords": ["tokens", "context", "compression", "productivity", "hooks"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Token Razor",
+    "shortDescription": "Reduce noisy tool output before it reaches context.",
+    "longDescription": "Bounds large tool results with deterministic sampling, credential redaction, and short-lived local recovery archives.",
+    "developerName": "Komaru",
+    "category": "Productivity",
+    "capabilities": ["Local", "Read"],
+    "defaultPrompt": [
+      "Finish this task with the smallest useful context.",
+      "Show my Token Razor savings for this session.",
+      "Use extreme token-saving mode for this task."
+    ],
+    "brandColor": "#7C3AED",
+    "websiteURL": "https://github.com/Kolikkii/token-razor",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.svg",
+    "logoDark": "./assets/logo-dark.svg"
+  }
+}
