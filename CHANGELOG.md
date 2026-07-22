@@ -22,6 +22,7 @@ All notable changes to Token Razor are documented here.
 - Prevented unquoted multi-file `cat` commands from being rewritten as one path.
 - Kept late critical lines when omission markers consume part of the output budget.
 - Prevented expired or size-pruned archives from returning unusable recovery IDs.
+- Made test discovery independent of shell glob expansion on Windows.
 
 ## [0.2.0] - 2026-07-22
 

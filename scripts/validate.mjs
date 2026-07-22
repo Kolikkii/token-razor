@@ -37,6 +37,7 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version || '')) fail
 if (manifest.version !== pkg.version) fail('plugin and package versions must match');
 if (manifest.repository !== 'https://github.com/Kolikkii/token-razor') fail('plugin repository URL is stale');
 if (Object.hasOwn(manifest, 'hooks')) fail('plugin manifest must rely on default hooks/hooks.json discovery for validator compatibility');
+if (/[*?]/.test(pkg.scripts?.test || '')) fail('test script must not depend on shell glob expansion');
 
 for (const relative of [
   'README.md', 'LICENSE', 'SECURITY.md', 'CONTRIBUTING.md', 'CHANGELOG.md',
