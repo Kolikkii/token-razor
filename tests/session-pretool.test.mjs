@@ -10,6 +10,8 @@ import { appendMetric, classifyPrompt, cleanupMetrics, cleanupSessionModes, clea
 test('prompt intent selects an explicit mode', () => {
   assert.equal(classifyPrompt('Покажи полный вывод без сокращений'), 'passthrough');
   assert.equal(classifyPrompt('Максимально экономь токены'), 'extreme');
+  assert.equal(classifyPrompt('Улучши экономию токенов до максимума'), 'extreme');
+  assert.equal(classifyPrompt('Minimize token usage for this task'), 'extreme');
   assert.equal(classifyPrompt('Не теряй детали, safe mode'), 'safe');
 });
 

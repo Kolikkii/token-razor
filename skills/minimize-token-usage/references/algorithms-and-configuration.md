@@ -7,13 +7,14 @@ Token Razor runs entirely on the local machine and uses no model call:
 1. Skip small responses and explicit passthrough turns.
 2. Normalize ANSI/control sequences and collapse long base64 blobs.
 3. Redact common credential forms in model-visible summaries.
-4. Flatten valid JSON into stable path/value evidence.
-5. Fingerprint lines after normalizing timestamps, IDs, and numbers.
-6. Collapse repeated and near-repeated lines while keeping counts and representative samples.
-7. Score errors, failures, warnings, summaries, diffs, tests, paths, head, and tail.
-8. Select high-value signals first, then boundary and coverage samples.
-9. Render the selection under an exact budget that includes omission markers.
-10. Save the original response in a private, gzip-compressed, short-lived local archive.
+4. Replace an exact MCP `content[].text` duplicate of `structuredContent` with one reference while retaining independent content blocks.
+5. Flatten valid JSON into stable path/value evidence.
+6. Fingerprint lines after normalizing timestamps, IDs, and numbers.
+7. Collapse repeated and near-repeated lines while keeping counts and representative samples.
+8. Score errors, failures, warnings, summaries, diffs, tests, paths, head, and tail.
+9. Select high-value signals first, then boundary and coverage samples.
+10. Render the selection under an exact budget that includes omission markers and hook recovery metadata.
+11. Save the original response in a private, gzip-compressed, short-lived local archive.
 
 The archive is deliberately retrieval-on-demand: the model sees a small identifier, not the full payload. Files are permission-restricted where the operating system supports it and pruned by age and total size.
 

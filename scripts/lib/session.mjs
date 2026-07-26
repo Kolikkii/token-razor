@@ -55,8 +55,8 @@ function readPrivateFile(file) {
 
 export function classifyPrompt(prompt, fallback = 'balanced') {
   const text = String(prompt ?? '');
-  if (/\b(?:verbatim|unabridged|full raw|do not (?:truncate|compress))\b/i.test(text) || /без сокращений|полный вывод|дословно/i.test(text)) return 'passthrough';
-  if (/\b(?:extreme|minimum tokens?|ultra terse)\b/i.test(text) || /эконом(?:ь|ия).*токен|минимум токен|максимально кратко/i.test(text)) return 'extreme';
+  if (/\b(?:verbatim|unabridged|full raw|do not (?:truncate|compress|summari[sz]e|minimi[sz]e)|no (?:compression|truncation))\b/i.test(text) || /без сокращений|полный вывод|дословно|не (?:сжимай|сокращай)/i.test(text)) return 'passthrough';
+  if (/\b(?:extreme|minimum tokens?|ultra terse|low[- ]token|token[- ]efficient)\b|\b(?:save|reduce|minimi[sz]e).{0,24}\btokens?\b/i.test(text) || /эконом[а-яё]*.*токен|миним[а-яё]*.*токен|максимально кратко/iu.test(text)) return 'extreme';
   if (/\b(?:safe mode|conservative)\b/i.test(text) || /не теряй детали|сохрани детали/i.test(text)) return 'safe';
   return fallback;
 }

@@ -47,6 +47,25 @@ test('JSON is flattened and retains failures', () => {
   assert.match(result.text, /SENTINEL-611/);
 });
 
+test('duplicate MCP structured text is represented once', () => {
+  const structuredContent = {
+    summary: { status: 'ERROR MCP-DUP-SENTINEL', total: 1000 },
+    results: Array.from({ length: 1000 }, (_, index) => ({ id: index, status: index === 777 ? 'failed' : 'ok' })),
+  };
+  const response = {
+    content: [
+      { type: 'text', text: JSON.stringify(structuredContent) },
+      { type: 'text', text: 'WARNING independent context' },
+    ],
+    structuredContent,
+    isError: false,
+  };
+  const result = compressToolResponse(response, { budget: 6000 });
+  assert.equal(result.originalChars, JSON.stringify(response, null, 2).length);
+  assert.equal(result.text.match(/MCP-DUP-SENTINEL/g)?.length, 1);
+  assert.match(result.text, /independent context/);
+});
+
 test('exact rendering budget does not discard a late failure', () => {
   const lines = Array.from({ length: 1400 }, (_, index) => index % 7 === 0
     ? `warning shard ${index}: retry scheduled`
@@ -59,9 +78,24 @@ test('exact rendering budget does not discard a late failure', () => {
 });
 
 test('common credentials are redacted', () => {
-  const text = redactSecrets('Authorization: Bearer abcdefghijklmnopqrstuvwxyz password=hunter22 sk-abcdefghijklmnop ghp_abcdefghijklmnopqrstuvwxyz123456 xoxb-1234567890-secretvalue npm_abcdefghijklmnopqrstuvwxyz1234 eyJabcdefghijk.abcdefghijklmnop.qrstuvwxyz12345');
-  assert.doesNotMatch(text, /hunter22|abcdefghijklmnop|ghp_|xoxb-|npm_|eyJ/);
+  const text = redactSecrets('Authorization: Bearer abcdefghijklmnopqrstuvwxyz password=hunter22 sk-abcdefghijklmnop ghp_abcdefghijklmnopqrstuvwxyz123456 xoxb-1234567890-secretvalue npm_abcdefghijklmnopqrstuvwxyz1234 eyJabcdefghijk.abcdefghijklmnop.qrstuvwxyz12345 {"client_secret":"top secret value","refresh_token":"refresh-me-123"} Authorization: Basic dXNlcjpwYXNzd29yZA== postgres://user:database-password@localhost/db');
+  assert.doesNotMatch(text, /hunter22|abcdefghijklmnop|ghp_|xoxb-|npm_|eyJ|top secret|refresh-me|dXNlcj|database-password/);
   assert.match(text, /REDACTED/);
+});
+
+test('long diagnostic lines retain a middle failure', () => {
+  const filler = Array.from({ length: 1200 }, (_, index) => `field${index % 17}=${String.fromCharCode(65 + index % 26)}-${index % 31}`).join(' ');
+  const middle = Math.floor(filler.length / 2);
+  const lines = Array.from({ length: 1000 }, (_, index) => `worker ${index % 7} processed ${index}`);
+  lines[500] = `${filler.slice(0, middle)} ERROR MID-SENTINEL ${filler.slice(middle)}`;
+  const result = compressToolResponse(lines.join('\n'), { budget: 2200 });
+  assert.match(result.text, /MID-SENTINEL/);
+  assert.ok(result.text.length <= 2200);
+});
+
+test('blank and decorative output does not consume the budget', () => {
+  const result = compressToolResponse(Array.from({ length: 5000 }, (_, index) => index % 2 ? '' : '----------------').join('\n'), { budget: 6000 });
+  assert.ok(result.text.length < 100);
 });
 
 test('zero-failure summaries do not trigger failure escalation', () => {
@@ -71,4 +105,10 @@ test('zero-failure summaries do not trigger failure escalation', () => {
   assert.equal(containsFailureSignal('{"success":false}'), true);
   assert.equal(containsFailureSignal('exit code: 2'), true);
   assert.equal(containsFailureSignal('process exited with exit status 2'), true);
+});
+
+test('compression threshold honors an escalated failure budget', () => {
+  const response = `ERROR build failed\n${'non-repeating detail '.repeat(400)}`;
+  assert.equal(shouldCompress(response, DEFAULT_CONFIG, 'balanced'), true);
+  assert.equal(shouldCompress(response, DEFAULT_CONFIG, 'balanced', 8100), false);
 });

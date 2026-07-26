@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "325554655a031df9217b9729554c4007256545d4",
+    "indexed_at": "2026-07-26T11:00:54Z",
+    "project": "token-razor",
+    "nodes": 340,
+    "edges": 590,
+    "original_size": 2359296,
+    "compressed_size": 275251,
+    "compression_level": 3
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { listArchives, restorePayload } from './lib/archive.mjs';
 import { budgetFor, loadConfig } from './lib/config.mjs';
@@ -11,7 +12,10 @@ const ownRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function dataDir(args = process.argv.slice(2)) {
   const flag = args.indexOf('--data-dir');
-  if (flag >= 0 && args[flag + 1]) return path.resolve(args[flag + 1]);
+  if (flag >= 0) {
+    if (!args[flag + 1] || args[flag + 1].startsWith('--')) throw new Error('--data-dir requires PATH');
+    return path.resolve(args[flag + 1]);
+  }
   return process.env.PLUGIN_DATA || process.env.CLAUDE_PLUGIN_DATA || path.join(ownRoot, '.data');
 }
 
@@ -46,9 +50,10 @@ function stats(args) {
 function preview(file, args) {
   const modeFlag = args.indexOf('--mode');
   const requestedMode = modeFlag >= 0 ? args[modeFlag + 1] : undefined;
+  if (modeFlag >= 0 && !requestedMode) throw new Error('--mode requires safe, balanced, or extreme');
   if (requestedMode && !['safe', 'balanced', 'extreme'].includes(requestedMode)) throw new Error(`Unknown preview mode: ${requestedMode}`);
   const cfg = loadConfig(process.cwd(), dataDir(args));
-  const mode = ['safe', 'balanced', 'extreme'].includes(requestedMode) ? requestedMode : cfg.mode;
+  const mode = ['safe', 'balanced', 'extreme'].includes(requestedMode) ? requestedMode : cfg.mode === 'passthrough' ? 'balanced' : cfg.mode;
   const raw = fs.readFileSync(path.resolve(file), 'utf8');
   const result = compressToolResponse(raw, { budget: budgetFor(cfg, mode) });
   process.stdout.write(`[Token Razor preview] ${result.originalChars} → ${result.compressedChars} chars; mode=${mode}; estimated tokens avoided=${result.estimatedTokensSaved}\n\n${result.text}\n`);
@@ -61,17 +66,34 @@ function restore(id, raw, args) {
   process.stdout.write('\n');
 }
 
-function slice(file, args) {
+async function slice(file, args) {
   const startFlag = args.indexOf('--start');
   const linesFlag = args.indexOf('--lines');
   const positiveInt = (value, fallback) => Number.isFinite(Number(value)) ? Math.max(1, Math.trunc(Number(value))) : fallback;
   const start = positiveInt(startFlag >= 0 ? args[startFlag + 1] : 1, 1);
   const count = positiveInt(linesFlag >= 0 ? args[linesFlag + 1] : 240, 240);
-  const content = fs.readFileSync(path.resolve(file), 'utf8').split(/\r?\n/);
-  const selected = content.slice(start - 1, start - 1 + count);
+  const input = fs.createReadStream(path.resolve(file), { encoding: 'utf8' });
+  const lines = readline.createInterface({ input, crlfDelay: Infinity });
+  const selected = [];
+  let lineNumber = 0;
+  let hasMore = false;
+  try {
+    for await (const line of lines) {
+      lineNumber += 1;
+      if (lineNumber < start) continue;
+      if (selected.length < count) selected.push(line);
+      else {
+        hasMore = true;
+        break;
+      }
+    }
+  } finally {
+    lines.close();
+    input.destroy();
+  }
   process.stdout.write(selected.join('\n'));
-  if (start - 1 + count < content.length) {
-    process.stdout.write(`\n[Token Razor: showing lines ${start}-${start + selected.length - 1} of ${content.length}; request another slice if needed]\n`);
+  if (hasMore) {
+    process.stdout.write(`\n[Token Razor: showing lines ${start}-${start + selected.length - 1}; request another slice if needed]\n`);
   } else process.stdout.write('\n');
 }
 
@@ -97,7 +119,7 @@ try {
   else if (command === 'preview' && args[0]) preview(args[0], args.slice(1));
   else if (command === 'restore' && args[0]) restore(args[0], args.includes('--raw'), args);
   else if (command === 'archives') process.stdout.write(`${JSON.stringify(listArchives(dataDir(args)), null, 2)}\n`);
-  else if (command === 'slice' && args[0]) slice(args[0], args.slice(1));
+  else if (command === 'slice' && args[0]) await slice(args[0], args.slice(1));
   else if (command === 'doctor') doctor(args);
   else {
     usage();

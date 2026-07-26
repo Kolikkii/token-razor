@@ -1,10 +1,15 @@
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 const ANSI_RE = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 const CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const BASE64_RE = /(?:[A-Za-z0-9+/]{80,}={0,2})/g;
+const FAILURE_RE = /\b(?:fatal|panic|exception|traceback|segfault|error|fail(?:ed|ure)?|assert(?:ion)?|timed?\s*out)\b/i;
+const IMPORTANT_RE = /\b(?:warn(?:ing)?|deprecated|retry|timeout|summary|result|total|passed|success|exit(?:ed)?|status|changed|modified)\b/i;
+const NOISE_RE = /^(?:\s*|[\s|`~_*=-]{12,})$/;
+const SECRET_KEY = '(?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|private[_-]?token|secret)';
 const SECRET_RULES = [
-  [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]'],
+  [/-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]'],
   [/\bsk-[A-Za-z0-9_-]{16,}\b/g, '[REDACTED_OPENAI_KEY]'],
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]'],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]'],
@@ -15,7 +20,10 @@ const SECRET_RULES = [
   [/\bAKIA[A-Z0-9]{16}\b/g, '[REDACTED_AWS_KEY]'],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[REDACTED_JWT]'],
   [/\b(Bearer\s+)[A-Za-z0-9._~+\/-]{16,}/gi, '$1[REDACTED]'],
-  [/\b(password|passwd|api[_-]?key|access[_-]?token|secret)\s*[:=]\s*([^\s,;]{6,})/gi, '$1=[REDACTED]'],
+  [/\b(Basic\s+)[A-Za-z0-9+/=]{8,}/gi, '$1[REDACTED]'],
+  [/\b((?:https?|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1[REDACTED]@'],
+  [new RegExp(`\\b(${SECRET_KEY})(["']?\\s*[:=]\\s*)(["'])(?:\\\\.|(?!\\3)[^\\r\\n])*\\3`, 'gi'), '$1$2$3[REDACTED]$3'],
+  [new RegExp(`\\b(${SECRET_KEY})(["']?\\s*[:=]\\s*)([^\\s,;}\\]]{6,})`, 'gi'), '$1$2[REDACTED]'],
 ];
 
 function shortHash(value) {
@@ -34,6 +42,23 @@ export function cleanText(value) {
     .replace(CONTROL_RE, '')
     .replace(BASE64_RE, token => `[BASE64 ${token.length} chars sha256:${shortHash(token)}]`)
     .replace(/\r\n?/g, '\n');
+}
+
+function dedupeStructuredText(response) {
+  if (!response || Array.isArray(response) || response.structuredContent == null || !Array.isArray(response.content)) return response;
+  return {
+    ...response,
+    content: response.content.map(item => {
+      if (item?.type !== 'text' || typeof item.text !== 'string') return item;
+      try {
+        return isDeepStrictEqual(JSON.parse(item.text), response.structuredContent)
+          ? { ...item, text: '[duplicate of $.structuredContent]' }
+          : item;
+      } catch {
+        return item;
+      }
+    }),
+  };
 }
 
 function responseToText(response) {
@@ -91,8 +116,19 @@ function maybeFlattenJson(text) {
 
 function clipLine(line, max = 900) {
   if (line.length <= max) return line;
-  const half = Math.floor((max - 64) / 2);
-  return `${line.slice(0, half)} … [${line.length - half * 2} chars; sha256:${shortHash(line)}] … ${line.slice(-half)}`;
+  const marker = ` … [${line.length} chars; sha256:${shortHash(line)}] … `;
+  const room = max - marker.length;
+  const failure = line.search(FAILURE_RE);
+  const signal = failure >= 0 ? failure : line.search(IMPORTANT_RE);
+  if (signal >= 0) {
+    const separator = ' … ';
+    const edge = Math.floor((room - separator.length) / 5);
+    const middle = room - separator.length - edge * 2;
+    const start = Math.max(edge, Math.min(signal - Math.floor(middle / 3), line.length - edge - middle));
+    return `${line.slice(0, edge)}${separator}${line.slice(start, start + middle)}${marker}${line.slice(-edge)}`;
+  }
+  const half = Math.floor(room / 2);
+  return `${line.slice(0, half)}${marker}${line.slice(-half)}`;
 }
 
 function fingerprint(line) {
@@ -134,8 +170,7 @@ function lineScore(line, index, total) {
   if (/\b(summary|result|total|passed|success|exit(?:ed)?|status|changed|modified)\b/i.test(line)) score += 60;
   if (/^(diff --git|@@|\+\+\+|---)|\b(test|spec)\b/i.test(line)) score += 42;
   if (/(?:^|\s)(?:[A-Za-z]:)?[^\s:]+\/[\w@.+-]+(?:\.\w+)?(?::\d+)?/.test(line)) score += 24;
-  if (/^[\s|`~_*=-]{12,}$/.test(line)) score -= 20;
-  if (line.trim().length === 0) score -= 8;
+  if (NOISE_RE.test(line)) score -= 20;
   if (index < 20 || index >= total - 20) score += 18;
   return score;
 }
@@ -185,7 +220,7 @@ function chooseLines(lines, charBudget) {
   const costs = lines.map(line => (line == null ? 0 : line.length + 1));
   let used = 0;
   const add = index => {
-    if (index < 0 || index >= lines.length || selected.has(index) || lines[index] == null) return false;
+    if (index < 0 || index >= lines.length || selected.has(index) || lines[index] == null || NOISE_RE.test(lines[index])) return false;
     if (used + costs[index] > charBudget) return false;
     selected.add(index);
     used += costs[index];
@@ -254,8 +289,8 @@ export function estimateTokens(chars) {
 }
 
 export function containsFailureSignal(response) {
-  const text = withoutBenignFailures(responseToText(response));
-  return /\b(?:fatal|panic|exception|traceback|segfault|error|fail(?:ed|ure)?|assert(?:ion)?|timed?\s*out)\b/i.test(text)
+  const text = withoutBenignFailures(responseToText(dedupeStructuredText(response)));
+  return FAILURE_RE.test(text)
     || hasNegativeStatus(text);
 }
 
@@ -284,7 +319,7 @@ export function compressToolResponse(response, options = {}) {
   const budget = Math.max(1200, Number(options.budget) || 9000);
   const rawText = responseToText(response);
   const originalChars = rawText.length;
-  let text = cleanText(rawText);
+  let text = cleanText(responseToText(dedupeStructuredText(response)));
   const flattened = maybeFlattenJson(text);
   const format = flattened ? 'json-paths' : 'text';
   if (flattened) text = flattened;
@@ -309,9 +344,9 @@ export function compressToolResponse(response, options = {}) {
   };
 }
 
-export function shouldCompress(response, config, mode = config.mode) {
+export function shouldCompress(response, config, mode = config.mode, budget) {
   if (!config.enabled || mode === 'passthrough') return false;
   if (containsBinaryMedia(response)) return false;
-  const activeBudget = config.budgets?.[mode] ?? config.budgets?.balanced ?? 6000;
+  const activeBudget = Number.isFinite(budget) ? budget : config.budgets?.[mode] ?? config.budgets?.balanced ?? 6000;
   return responseToText(response).length > Math.max(config.smallResponseChars, activeBudget + 1200);
 }
