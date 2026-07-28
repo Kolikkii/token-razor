@@ -22,14 +22,13 @@ function searchFixture() {
 
 const rows = [];
 for (const fixture of [logFixture(), jsonFixture(), searchFixture()]) {
-  const original = typeof fixture.value === 'string' ? fixture.value : JSON.stringify(fixture.value);
   const result = compressToolResponse(fixture.value, { budget: 6000 });
   for (const marker of fixture.markers) assert.match(result.text, new RegExp(marker));
   rows.push({
     fixture: fixture.name,
-    originalChars: original.length,
+    originalChars: result.originalChars,
     deliveredChars: result.text.length,
-    reduction: `${(100 * (1 - result.text.length / original.length)).toFixed(1)}%`,
+    reduction: `${(100 * (1 - result.text.length / result.originalChars)).toFixed(1)}%`,
     estimatedTokensSaved: result.estimatedTokensSaved,
     signals: 'kept',
   });

@@ -26,6 +26,12 @@ node "/installed/token-razor/scripts/cli.mjs" restore TR-XXXXXXXXXXXX --data-dir
 
 Copy the exact command from the compacted result; it contains the current installation and data paths. Prefer a fresh narrow query over restoring a huge archive when the missing fact is known. Never invent omitted content.
 
+When the result advertises a `search` command, use it before printing the full archive:
+
+```bash
+node "/installed/token-razor/scripts/cli.mjs" search TR-XXXXXXXXXXXX "decisive literal" --context 3 --data-dir "/plugin/data/path"
+```
+
 ## Select a mode
 
 - `balanced`: default; compress large tool output aggressively while retaining signals.

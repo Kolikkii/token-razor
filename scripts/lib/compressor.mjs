@@ -77,7 +77,32 @@ function jsonPath(parent, key) {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${parent}.${key}` : `${parent}[${JSON.stringify(key)}]`;
 }
 
-function flattenJson(value, path = '$', depth = 0, out = []) {
+function sampledArrayIndexes(value, maxItems) {
+  if (value.length <= maxItems) return null;
+  const indexes = new Set();
+  const signalLimit = Math.floor(maxItems / 2);
+  const signals = [];
+  for (let index = 0; index < value.length; index += 1) {
+    let text;
+    try {
+      text = typeof value[index] === 'string' ? value[index] : JSON.stringify(value[index]);
+    } catch {
+      continue;
+    }
+    if (FAILURE_RE.test(withoutBenignFailures(text)) || hasNegativeStatus(text)) signals.push(index);
+  }
+  const signalSamples = Math.min(signalLimit, signals.length);
+  for (let sample = 0; sample < signalSamples; sample += 1) {
+    indexes.add(signals[Math.round(sample * (signals.length - 1) / Math.max(1, signalSamples - 1))]);
+  }
+  const coverageSamples = maxItems - indexes.size;
+  for (let sample = 0; sample < coverageSamples; sample += 1) {
+    indexes.add(Math.round(sample * (value.length - 1) / Math.max(1, coverageSamples - 1)));
+  }
+  return [...indexes].sort((a, b) => a - b);
+}
+
+function flattenJson(value, path = '$', depth = 0, out = [], arraySamples = 64) {
   if (out.length >= MAX_JSON_PATHS) return true;
   if (depth > 9) {
     out.push(`${path} = [depth limit]`);
@@ -85,14 +110,16 @@ function flattenJson(value, path = '$', depth = 0, out = []) {
   }
   if (Array.isArray(value)) {
     out.push(`${path}.length = ${value.length}`);
-    for (let index = 0; index < value.length; index += 1) {
-      if (flattenJson(value[index], `${path}[${index}]`, depth + 1, out)) return true;
+    const indexes = sampledArrayIndexes(value, arraySamples);
+    if (indexes) out.push(`${path} = [sampled ${indexes.length} of ${value.length} items; failures prioritized]`);
+    for (const index of indexes ?? value.keys()) {
+      if (flattenJson(value[index], `${path}[${index}]`, depth + 1, out, arraySamples)) return true;
     }
   } else if (value && typeof value === 'object') {
     const entries = Object.entries(value);
     if (entries.length === 0) out.push(`${path} = {}`);
     for (const [key, item] of entries) {
-      if (flattenJson(item, jsonPath(path, key), depth + 1, out)) return true;
+      if (flattenJson(item, jsonPath(path, key), depth + 1, out, arraySamples)) return true;
     }
   } else {
     const rendered = JSON.stringify(value);
@@ -101,20 +128,20 @@ function flattenJson(value, path = '$', depth = 0, out = []) {
   return false;
 }
 
-function maybeFlattenJson(text) {
+function maybeFlattenJson(text, arraySamples) {
   const trimmed = text.trim();
   if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
   try {
     const value = JSON.parse(trimmed);
     const lines = [];
-    if (flattenJson(value, '$', 0, lines)) lines.push(`$ = [flattening stopped after ${MAX_JSON_PATHS.toLocaleString('en-US')} paths]`);
+    if (flattenJson(value, '$', 0, lines, arraySamples)) lines.push(`$ = [flattening stopped after ${MAX_JSON_PATHS.toLocaleString('en-US')} paths]`);
     return lines.join('\n');
   } catch {
     return null;
   }
 }
 
-function clipLine(line, max = 900) {
+export function clipLine(line, max = 900) {
   if (line.length <= max) return line;
   const marker = ` … [${line.length} chars; sha256:${shortHash(line)}] … `;
   const room = max - marker.length;
@@ -138,6 +165,11 @@ function fingerprint(line) {
       .replace(/\b\d{4}-\d{2}-\d{2}[t ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?z?\b/g, '#time')
       .replace(/0x[0-9a-f]+/g, '0x#');
   }
+  if (hasNegativeStatus(line)) return normalized;
+  const jsonAssignment = line.match(/^(\$.*?) = /);
+  if (jsonAssignment) return `json:${jsonAssignment[1].replace(/\[\d+\]/g, '[#]')}`;
+  const sourceLocation = line.match(/^((?:[A-Za-z]:)?[^:\n]*[\\/][^:\n\\/]+\.[A-Za-z0-9]{1,10}|[^:\n\\/]+\.[A-Za-z0-9]{1,10}):\d+(?::\d+)?:/);
+  if (sourceLocation) return `location:${sourceLocation[1].replaceAll('\\', '/').toLowerCase()}`;
   return line
     .toLowerCase()
     .replace(/0x[0-9a-f]+/g, '0x#')
@@ -189,8 +221,12 @@ function collapseNearDuplicates(lines) {
   const retained = new Map();
   let duplicateGroups = 0;
   let collapsedLines = 0;
-  for (const indexes of groups.values()) {
+  for (const [key, indexes] of groups) {
     if (indexes.length === 1) continue;
+    if (key.startsWith('location:') && indexes.length < 20) {
+      groups.delete(key);
+      continue;
+    }
     duplicateGroups += 1;
     const keep = new Set([indexes[0], indexes.at(-1)]);
     if (indexes.length >= 6) {
@@ -320,10 +356,10 @@ export function compressToolResponse(response, options = {}) {
   const rawText = responseToText(response);
   const originalChars = rawText.length;
   let text = cleanText(responseToText(dedupeStructuredText(response)));
-  const flattened = maybeFlattenJson(text);
+  const bodyBudget = Math.max(500, budget - 700);
+  const flattened = maybeFlattenJson(text, Math.min(96, Math.max(24, Math.floor(bodyBudget / 80))));
   const format = flattened ? 'json-paths' : 'text';
   if (flattened) text = flattened;
-  const bodyBudget = Math.max(500, budget - 700);
   const maxLine = Math.min(900, Math.max(240, bodyBudget - 140));
   const collapsed = collapseNearDuplicates(text.split('\n').map(line => clipLine(line, maxLine)));
   const lines = collapsed.lines;

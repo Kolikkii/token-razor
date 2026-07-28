@@ -40,6 +40,11 @@ function restoreCommand(cliPath, archiveId, dataDir) {
   return process.platform === 'win32' ? `& ${command}` : command;
 }
 
+function searchCommand(cliPath, archiveId, dataDir) {
+  const command = [process.execPath, cliPath, 'search', archiveId, 'PATTERN', '--data-dir', dataDir].map(shellQuote).join(' ');
+  return process.platform === 'win32' ? `& ${command}` : command;
+}
+
 function formatFeedback(compressed, mode, archiveId, cliPath, dataDir) {
   const prefix = [
     `[Token Razor] ${compressed.originalChars.toLocaleString('en-US')} → ${compressed.compressedChars.toLocaleString('en-US')} chars`,
@@ -48,7 +53,7 @@ function formatFeedback(compressed, mode, archiveId, cliPath, dataDir) {
     archiveId ? `Full local output: ${archiveId}` : 'Full-output archive unavailable',
   ].filter(Boolean).join(' ');
   const retrieval = archiveId
-    ? `Retrieve only if omitted evidence is needed: ${restoreCommand(cliPath, archiveId, dataDir)}`
+    ? `Search omitted evidence first: ${searchCommand(cliPath, archiveId, dataDir)}\nFull restore only if needed: ${restoreCommand(cliPath, archiveId, dataDir)}`
     : '';
   return `${prefix}\n${retrieval}\n\n${compressed.text}`.trim();
 }

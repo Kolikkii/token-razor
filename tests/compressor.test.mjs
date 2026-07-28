@@ -39,12 +39,44 @@ test('normalized variants retain representative samples', () => {
   assert.ok(result.selectedLines >= 4);
 });
 
+test('large source searches are grouped while diagnostics stay visible', () => {
+  const lines = Array.from({ length: 500 }, (_, index) => `src/worker.mjs:${index + 1}:const unique_${index} = ${index};`);
+  lines[411] = 'src/worker.mjs:412:7:ERROR SEARCH-SENTINEL invalid branch';
+  const result = compressToolResponse(lines.join('\n'), { budget: 2200 });
+  assert.match(result.text, /SEARCH-SENTINEL/);
+  assert.ok(result.collapsedLines > 450);
+  assert.ok(result.text.length <= 2200);
+
+  const small = compressToolResponse(Array.from({ length: 19 }, (_, index) => `src/file-${index}.mjs:${index + 1}:unique match`).join('\n'), { budget: 2200 });
+  assert.equal(small.collapsedLines, 0);
+
+  const diverse = compressToolResponse(Array.from({ length: 25 }, (_, index) => `src/pkg-${index}/file-${index}.mjs:${index + 1}:unique match`).join('\n'), { budget: 2200 });
+  assert.equal(diverse.collapsedLines, 0);
+});
+
 test('JSON is flattened and retains failures', () => {
   const raw = JSON.stringify({ 'build.jobs': Array.from({ length: 700 }, (_, i) => ({ id: i, status: i === 611 ? 'ERROR SENTINEL-611' : 'ok' })) });
   const result = compressToolResponse(raw, { budget: 4500 });
   assert.equal(result.format, 'json-paths');
   assert.match(result.text, /\$\["build\.jobs"\]/);
   assert.match(result.text, /SENTINEL-611/);
+});
+
+test('long JSON arrays sample across the whole payload and keep late failures', () => {
+  const raw = JSON.stringify({
+    rows: Array.from({ length: 25000 }, (_, index) => ({
+      id: index,
+      success: index !== 24990,
+      message: index === 24991 ? 'ERROR LATE-JSON-SENTINEL' : `unique payload ${index}`,
+    })),
+  });
+  const result = compressToolResponse(raw, { budget: 2600 });
+  assert.match(result.text, /sampled \d+ of 25000 items/);
+  assert.match(result.text, /LATE-JSON-SENTINEL/);
+  assert.match(result.text, /\[24990\]\.success = false/);
+  assert.match(result.text, /\[24999\]/);
+  assert.ok(result.text.length <= 2600);
+  assert.ok(result.collapsedLines > 20);
 });
 
 test('duplicate MCP structured text is represented once', () => {

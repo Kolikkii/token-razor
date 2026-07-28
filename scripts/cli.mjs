@@ -5,7 +5,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { listArchives, restorePayload } from './lib/archive.mjs';
 import { budgetFor, loadConfig } from './lib/config.mjs';
-import { compressToolResponse } from './lib/compressor.mjs';
+import { clipLine, compressToolResponse } from './lib/compressor.mjs';
 import { readMetrics } from './lib/session.mjs';
 
 const ownRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,7 +20,7 @@ function dataDir(args = process.argv.slice(2)) {
 }
 
 function usage() {
-  process.stdout.write(`Token Razor CLI\n\nUsage:\n  token-razor stats [--json] [--data-dir PATH]\n  token-razor preview FILE [--mode safe|balanced|extreme]\n  token-razor restore TR-XXXXXXXXXXXX [--raw] [--data-dir PATH]\n  token-razor archives [--data-dir PATH]\n  token-razor slice FILE [--start N] [--lines N]\n  token-razor doctor [--data-dir PATH]\n`);
+  process.stdout.write(`Token Razor CLI\n\nUsage:\n  token-razor stats [--json] [--data-dir PATH]\n  token-razor preview FILE [--mode safe|balanced|extreme]\n  token-razor search TR-XXXXXXXXXXXX PATTERN [--context N] [--limit N] [--chars N] [--data-dir PATH]\n  token-razor restore TR-XXXXXXXXXXXX [--raw] [--data-dir PATH]\n  token-razor archives [--data-dir PATH]\n  token-razor slice FILE [--start N] [--lines N]\n  token-razor doctor [--data-dir PATH]\n`);
 }
 
 function stats(args) {
@@ -64,6 +64,75 @@ function restore(id, raw, args) {
   const value = raw ? payload : payload.toolResponse;
   process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value, null, 2));
   process.stdout.write('\n');
+}
+
+function search(id, pattern, args) {
+  if (!pattern || pattern.startsWith('--')) throw new Error('search requires a literal PATTERN');
+  const numberFlag = (name, fallback, max) => {
+    const flag = args.indexOf(name);
+    if (flag < 0) return fallback;
+    const value = Number(args[flag + 1]);
+    if (!Number.isInteger(value) || value < 0) throw new Error(`${name} requires a non-negative integer`);
+    return Math.min(value, max);
+  };
+  const context = numberFlag('--context', 2, 20);
+  const limit = Math.max(1, numberFlag('--limit', 20, 100));
+  const charBudget = Math.max(1200, numberFlag('--chars', 6000, 20000));
+  const hitLimit = Math.min(limit, Math.max(1, Math.floor((charBudget - 512) / 96)));
+  const value = restorePayload(dataDir(args), id).toolResponse;
+  const lines = (typeof value === 'string' ? value : JSON.stringify(value, null, 2)).split(/\r?\n/);
+  const needle = pattern.toLowerCase();
+  const hits = [];
+  let hasMore = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].toLowerCase().includes(needle)) continue;
+    if (hits.length === hitLimit) {
+      hasMore = true;
+      break;
+    }
+    hits.push(index);
+  }
+  if (!hits.length) {
+    process.stdout.write('[Token Razor: no literal matches]\n');
+    return;
+  }
+  const hitSet = new Set(hits);
+  const selected = new Map();
+  const available = charBudget - 512;
+  let used = 0;
+  const clipMatch = (line, max) => {
+    if (line.length <= max) return line;
+    const marker = ` … [${line.length} chars] … `;
+    const room = max - marker.length;
+    const signal = line.toLowerCase().indexOf(needle);
+    const start = Math.max(0, Math.min(signal - Math.floor(room / 2), line.length - room));
+    return start > 0 ? `${marker}${line.slice(start, start + room)}` : `${line.slice(0, room)}${marker}`;
+  };
+  const add = (index, max) => {
+    if (index < 0 || index >= lines.length || selected.has(index)) return true;
+    const rendered = `${index + 1}${hitSet.has(index) ? ':' : '-'}${hitSet.has(index) ? clipMatch(lines[index], max) : clipLine(lines[index], max)}`;
+    if (used + rendered.length + 1 > available) return false;
+    selected.set(index, rendered);
+    used += rendered.length + 1;
+    return true;
+  };
+  const hitMax = Math.max(64, Math.floor((available - hits.length * 12) / hits.length));
+  for (const hit of hits) add(hit, hitMax);
+  let contextOmitted = false;
+  for (let distance = 1; distance <= context; distance += 1) {
+    for (const hit of hits) {
+      if (!add(hit - distance, 240) || !add(hit + distance, 240)) contextOmitted = true;
+    }
+  }
+  const output = [];
+  let previous = -1;
+  for (const [index, rendered] of [...selected].sort((a, b) => a[0] - b[0])) {
+    if (previous >= 0 && index > previous + 1) output.push('…');
+    output.push(rendered);
+    previous = index;
+  }
+  if (hasMore || contextOmitted) output.push('[Token Razor: more matches or context omitted; raise --chars up to 20000]');
+  process.stdout.write(`${output.join('\n')}\n`);
 }
 
 async function slice(file, args) {
@@ -117,6 +186,7 @@ try {
   if (!command || command === 'help' || command === '--help') usage();
   else if (command === 'stats') stats(args);
   else if (command === 'preview' && args[0]) preview(args[0], args.slice(1));
+  else if (command === 'search' && args[0] && args[1]) search(args[0], args[1], args.slice(2));
   else if (command === 'restore' && args[0]) restore(args[0], args.includes('--raw'), args);
   else if (command === 'archives') process.stdout.write(`${JSON.stringify(listArchives(dataDir(args)), null, 2)}\n`);
   else if (command === 'slice' && args[0]) await slice(args[0], args.slice(1));

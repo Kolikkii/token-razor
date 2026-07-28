@@ -28,7 +28,7 @@ Token Razor installs six hooks:
 - `SessionStart` reports that the plugin is active.
 - `PostCompact` and `Stop` prune local state.
 
-The compressor flattens JSON into unambiguous paths, removes terminal control codes, redacts common credentials, collapses repeated variants, and scores diagnostic lines before sampling the remaining output. Failure results get 35% more space, up to the `safe` limit. Images, audio, video, small results, and explicit verbatim requests pass through unchanged.
+The compressor flattens JSON into unambiguous paths, samples very long arrays across their full range, removes terminal control codes, redacts common credentials, groups repeated JSON fields and source-search matches, and scores diagnostic lines before sampling the remaining output. Failures are always prioritized. Failure results get 35% more space, up to the `safe` limit. Images, audio, video, small results, and explicit verbatim requests pass through unchanged.
 
 Selected lines stay in source order. Exact rendering costs include omission markers, so a late high-priority error is not lost to a final hard truncation. If compression or storage fails, the hook exits without blocking the underlying tool.
 
@@ -48,6 +48,7 @@ The current turn can request a mode in plain language. `TOKEN_RAZOR_MODE` sets a
 Compressed results include a `TR-XXXXXXXXXXXX` ID and an exact restore command when an archive is available.
 
 ```bash
+node scripts/cli.mjs search TR-XXXXXXXXXXXX "error message" --context 3
 node scripts/cli.mjs restore TR-XXXXXXXXXXXX
 node scripts/cli.mjs preview ./large.log --mode extreme
 node scripts/cli.mjs stats --json
@@ -55,7 +56,7 @@ node scripts/cli.mjs archives
 node scripts/cli.mjs doctor
 ```
 
-Restore only when omitted evidence is needed. A narrow rerun or file slice is usually cheaper.
+Search the archive first and restore it only when a narrow match is insufficient. A narrow rerun or file slice is usually cheaper still.
 
 ## Configuration
 
@@ -81,7 +82,7 @@ See [`skills/minimize-token-usage/references/algorithms-and-configuration.md`](s
 npm run bench
 ```
 
-The v0.3.0 synthetic component fixtures show a 98.9% weighted character reduction while retaining all embedded failure sentinels. This is a compressor result, not an end-to-end token or task-quality claim. See [`docs/performance.md`](docs/performance.md) for the data and [`docs/evaluation.md`](docs/evaluation.md) for a comparison protocol.
+The current synthetic component fixtures show a 99.0% weighted character reduction while retaining all embedded failure sentinels. This is a compressor result, not an end-to-end token or task-quality claim. See [`docs/performance.md`](docs/performance.md) for the data and [`docs/evaluation.md`](docs/evaluation.md) for a comparison protocol.
 
 ## Development
 

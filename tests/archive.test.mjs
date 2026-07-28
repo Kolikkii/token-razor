@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { archivePayload, listArchives, restorePayload } from '../scripts/lib/archive.mjs';
 import { DEFAULT_CONFIG } from '../scripts/lib/config.mjs';
 
@@ -15,6 +17,34 @@ test('archive round-trips and uses stable content ids', () => {
   assert.equal(sameId, id);
   assert.deepEqual(restorePayload(dir, id), payload);
   assert.equal(listArchives(dir).length, 1);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('CLI searches an archive without printing all of it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-razor-search-'));
+  const id = archivePayload(dir, {
+    toolName: 'Bash',
+    toolResponse: ['before', 'needle first', 'after', 'noise', 'needle second'].join('\n'),
+  }, DEFAULT_CONFIG);
+  const cli = fileURLToPath(new URL('../scripts/cli.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [
+    cli, 'search', id, 'needle', '--context', '1', '--limit', '1', '--data-dir', dir,
+  ], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /1-before\n2:needle first\n3-after/);
+  assert.match(result.stdout, /more matches/);
+  assert.doesNotMatch(result.stdout, /needle second/);
+
+  const hugeId = archivePayload(dir, {
+    toolName: 'Bash',
+    toolResponse: `${'prefix '.repeat(200000)}NEEDLE-LONG-LINE${' suffix'.repeat(200000)}`,
+  }, DEFAULT_CONFIG);
+  const huge = spawnSync(process.execPath, [
+    cli, 'search', hugeId, 'NEEDLE-LONG-LINE', '--data-dir', dir,
+  ], { encoding: 'utf8' });
+  assert.equal(huge.status, 0, huge.stderr);
+  assert.match(huge.stdout, /NEEDLE-LONG-LINE/);
+  assert.ok(huge.stdout.length <= 6000);
   fs.rmSync(dir, { recursive: true });
 });
 
