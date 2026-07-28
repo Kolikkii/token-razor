@@ -35,11 +35,6 @@ function shellQuote(value) {
   return `'${text.replaceAll("'", "'\\''")}'`;
 }
 
-function restoreCommand(cliPath, archiveId, dataDir) {
-  const command = [process.execPath, cliPath, 'restore', archiveId, '--data-dir', dataDir].map(shellQuote).join(' ');
-  return process.platform === 'win32' ? `& ${command}` : command;
-}
-
 function searchCommand(cliPath, archiveId, dataDir) {
   const command = [process.execPath, cliPath, 'search', archiveId, 'PATTERN', '--data-dir', dataDir].map(shellQuote).join(' ');
   return process.platform === 'win32' ? `& ${command}` : command;
@@ -53,7 +48,7 @@ function formatFeedback(compressed, mode, archiveId, cliPath, dataDir) {
     archiveId ? `Full local output: ${archiveId}` : 'Full-output archive unavailable',
   ].filter(Boolean).join(' ');
   const retrieval = archiveId
-    ? `Search omitted evidence first: ${searchCommand(cliPath, archiveId, dataDir)}\nFull restore only if needed: ${restoreCommand(cliPath, archiveId, dataDir)}`
+    ? `Search omitted evidence first: ${searchCommand(cliPath, archiveId, dataDir)}\nFor full output, replace ${shellQuote('search')} ${shellQuote(archiveId)} ${shellQuote('PATTERN')} with ${shellQuote('restore')} ${shellQuote(archiveId)}.`
     : '';
   return `${prefix}\n${retrieval}\n\n${compressed.text}`.trim();
 }

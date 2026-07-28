@@ -4,14 +4,21 @@ All notable changes to Token Razor are documented here.
 
 ## Unreleased
 
+## [0.4.0] - 2026-07-28
+
 ### Added
 
 - Bounded literal search with context over recovery archives, avoiding full-output delivery to model context for known evidence.
 - Whole-range sampling for oversized JSON arrays with explicit failure prioritization.
+- A GitHub-ready social preview and copy-and-paste launch kit.
 
 ### Changed
 
 - Grouped structurally repeated JSON fields and source-search matches while retaining representative samples and diagnostics.
+
+### Fixed
+
+- Shortened recovery guidance so long platform paths cannot displace high-priority evidence from the active output budget.
 
 ## [0.3.0] - 2026-07-22
 

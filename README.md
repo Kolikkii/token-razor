@@ -3,9 +3,13 @@
 [![CI](https://github.com/Kolikkii/token-razor/actions/workflows/ci.yml/badge.svg)](https://github.com/Kolikkii/token-razor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](LICENSE)
 
+![Token Razor: less tool noise, more useful context](assets/social-preview.png)
+
+**Stop feeding your coding agent megabytes of repetitive output.**
+
 Token Razor is a local Codex plugin that reduces large tool results before they enter the model context. Compression is deterministic, uses no model call, and keeps the original result in a short-lived recovery archive.
 
-The plugin targets a different part of the token budget than [Ponytail](https://github.com/DietrichGebert/ponytail): Ponytail guides implementation size, while Token Razor limits noisy tool output. They can be used together.
+On the included deterministic synthetic fixtures, it reduces **902,484 → 9,054 characters (99.0%)** while retaining every embedded failure sentinel. This is a component benchmark, not a token, cost, or task-quality claim.
 
 ## Install
 
@@ -45,7 +49,7 @@ The current turn can request a mode in plain language. `TOKEN_RAZOR_MODE` sets a
 
 ## Recovery and CLI
 
-Compressed results include a `TR-XXXXXXXXXXXX` ID and an exact restore command when an archive is available.
+Compressed results include a `TR-XXXXXXXXXXXX` ID, an exact search command, and a compact restore substitution when an archive is available.
 
 ```bash
 node scripts/cli.mjs search TR-XXXXXXXXXXXX "error message" --context 3
@@ -82,7 +86,11 @@ See [`skills/minimize-token-usage/references/algorithms-and-configuration.md`](s
 npm run bench
 ```
 
-The current synthetic component fixtures show a 99.0% weighted character reduction while retaining all embedded failure sentinels. This is a compressor result, not an end-to-end token or task-quality claim. See [`docs/performance.md`](docs/performance.md) for the data and [`docs/evaluation.md`](docs/evaluation.md) for a comparison protocol.
+Fixture-level results and limitations are documented in [`docs/performance.md`](docs/performance.md); use [`docs/evaluation.md`](docs/evaluation.md) for an end-to-end comparison protocol.
+
+## Where it fits
+
+Token Razor bounds noisy tool output at the Codex hook boundary. [Ponytail](https://github.com/DietrichGebert/ponytail) guides implementation size instead, so the two can be used together.
 
 ## Development
 

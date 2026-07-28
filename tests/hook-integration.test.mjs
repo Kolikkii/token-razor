@@ -144,6 +144,8 @@ test('PostToolUse keeps the complete feedback inside the active budget', () => {
   }, dataDir);
   const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
   assert.ok(context.length <= 3200, `${context.length} > 3200`);
+  assert.equal(context.split(dataDir).length - 1, 1);
+  assert.match(context, /replace .*restore/);
   assert.match(context, /SUMMARY/);
   fs.rmSync(rootDir, { recursive: true });
 });
